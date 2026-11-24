@@ -1,108 +1,61 @@
-# Heat-Klang-Valley – SDS320
+# Urban expansion and land surface temperature in Elmina
 
-An exploratory remote sensing project investigating urban expansion along the Elmina expansion corridor in Klang Valley, Malaysia. The aim is to identify changes in vegetation and built-up areas and investigate their relationship with land surface temperature.
+This SDS 320 Spatial Data Analytics project maps candidate urban expansion in Elmina, Klang Valley, Malaysia, and examines its association with relative land surface temperature (LST) change. It compares Landsat 5 TM imagery from **31 May 2004** with Landsat 9 OLI-2/TIRS-2 imagery from **17 May 2025**. Both acquisitions are Landsat Collection 2 Level-2 products sourced through the Microsoft Planetary Computer STAC catalogue.
 
-## Current status (25 October 2026)
+## Data preparation
 
-The Jupyter workflow now includes bi-temporal Landsat change detection, NDVI/NDBI differences, a preliminary candidate-urbanisation mask, and absolute and relative land surface temperature (LST) comparisons. These are exploratory results; the change mask has not yet been validated against reference data.
+The study area spans 101.50–101.54° E and 3.16–3.20° N (WGS 84). The project's local `QA_PIXEL` check reported 0% cloud cover within the study area on both dates under the workflow's QA rules and valid-pixel denominator. The workflow applies product scaling and valid-data masks and checks that both dates share a 30 m grid in UTM zone 47N (EPSG:32647), with matching dimensions (148 × 149) and affine transforms.
 
-| Acquisition date | Satellite | RGB bands (red, green, blue) |
+## Change detection and spatial validation
+
+| Approach | Method | Reported result |
 | --- | --- | --- |
-| 31 May 2004 | Landsat 5 | `TM_B3`, `TM_B2`, `TM_B1` |
-| 17 May 2025 | Landsat 9 | `OLI_B4`, `OLI_B3`, `OLI_B2` |
+| NDVI/NDBI baseline | Flag candidate urban expansion where ΔNDVI ≤ −0.20 and ΔNDBI ≥ +0.10. Each difference is 2025 minus 2004. | 47.03% of valid baseline pixels met both criteria. |
+| Pretrained ChangeStar | Run an exploratory zero-shot transfer experiment through `torchange` and evaluate scores against the manual QGIS reference labels. | ROC-AUC **0.497**, approximately chance-level discrimination. |
+| Supervised Siamese CNN | Train on pairs of **9 × 9** multispectral patches with **six bands per date**, using QGIS change and no-change labels. Evaluate with spatial two-fold cross-validation. | Accuracy **0.912**, precision **0.875**, recall **1.000**, F1 **0.933**, ROC-AUC **0.994**. |
 
-The comparison is **2004-05-31 vs 2025-05-17**. Both acquisitions fall in May, which helps limit seasonal differences, but weather, acquisition conditions, and sensor differences remain relevant.
+The manual QGIS raster provides local change and no-change labels for evaluation and CNN training. Spatial separation between folds reduces dependence between training and evaluation samples. The CNN classification threshold of **0.58** was optimized using the cross-validation results. The thresholded metrics are CV estimates after tuning, and independent held-out performance remains unmeasured. ROC-AUC summarizes discrimination across thresholds.
 
-## Study area
+For full-area mapping, a separate final CNN was fitted on **all 294 labelled patches** and applied at the CV-selected threshold. The performance metrics above describe the fold models. The mapped CNN and NDVI/NDBI masks agreed on **75.0%** of compared pixels, with a change-class **Jaccard index of 0.651**. These figures measure agreement between the maps.
 
-Elmina subset in geographic coordinates (WGS84, EPSG:4326):
+The ChangeStar transfer was unsuccessful for this task. Differences in image characteristics and spatial resolution, along with the mismatch between the pretrained change target and the local urban-expansion labels, offer plausible explanations for the near-chance result.
 
-```python
-bbox_list = [101.50, 3.16, 101.54, 3.20]
-bbox_stac = {
-    "west": 101.50,
-    "south": 3.16,
-    "east": 101.54,
-    "north": 3.20,
-}
+## Relative land surface temperature
+
+For each mask, the contrast is the mean relative LST change of the changed group minus that of the unchanged group.
+
+| Change mask | Mean relative LST contrast |
+| --- | ---: |
+| NDVI/NDBI baseline | +4.79 °C |
+| Siamese CNN full-area map | +4.04 °C |
+| Manual QGIS reference | +6.91 °C |
+
+All three masks show higher mean relative LST change in the changed group. The LST comparison excludes ChangeStar because its scores did not discriminate the local reference classes.
+
+## Project files and reproduction
+
+The repository tracks this README. The notebook and reference GeoTIFF are separate inputs. Use the following local layout.
+
+```text
+Elmina_heat_CLEAN.ipynb
+qgis_reference/
+  elmina_reference_change_mask.tif
 ```
 
-`bbox_list` is used for the STAC search and local cloud check; `bbox_stac` is the dictionary passed to `connection.load_stac(spatial_extent=...)`.
+1. Obtain the clean notebook and the QGIS reference raster. Start Jupyter from the directory above so the notebook can resolve the relative reference path.
+2. Set up a Python environment with Jupyter, NumPy, Rasterio, Matplotlib, scikit-learn and PyTorch. The acquisition workflow uses openEO and STAC. The ChangeStar experiment also requires `torchange` and pretrained weights. Consult the notebook's imports and model-loading cell for additional dependencies and checkpoint details.
+3. To regenerate imagery inputs, authenticate with an openEO backend that supports `load_stac`. Keep credentials local. Use the acquisitions and bounds above and follow the notebook for scene selection, product scaling, QA and grid checks.
+4. Restart the kernel and run all cells in order. Use the notebook for the masking rules, spatial split, threshold selection and relative LST calculation.
 
-The analysis rasters have the same CRS (**EPSG:32647**), **30 m** resolution, **148 × 149** grid, and matching affine transform, enabling pixel-wise comparison.
+## Limitations
 
-## Data and cloud check
+- The comparison uses two May acquisitions from different sensors. Weather, atmospheric conditions, soil moisture and sensor differences can influence the observed changes. The LST contrasts describe a spatial association. The study design cannot establish a causal warming effect.
+- At 30 m, individual pixels may mix built surfaces, bare soil and vegetation. Vegetation loss and exposed soil can also satisfy the index rule, so its mapped coverage is a screening result.
+- Reference interpretation and spatial autocorrelation can affect model performance estimates. The manual labels and two spatial folds cover one study area. Transfer to other areas, dates or sensors remains untested.
 
-Data source: Landsat Collection 2 Level-2 through the [Microsoft Planetary Computer STAC catalogue](https://planetarycomputer.microsoft.com/api/stac/v1/collections/landsat-c2-l2).
+## References
 
-The `QA_PIXEL` checks reported **0% cloud cover within the ROI for both dates**. This refers to the local ROI, not the entire scene, and depends on the QA bits, invalid-pixel handling, and denominator used. Values here are reported from the project workflow, not independently recalculated for this README.
-
-## Jupyter workflow
-
-Requirements include a Python/Jupyter environment, access to an openEO backend supporting `load_stac`, and an authenticated openEO connection named `connection`. The specific backend and authentication procedure should be documented in the project notebook.
-
-The RGB step requires `openeo`, `rasterio`, `numpy`, and `matplotlib`; additional packages may be needed for the STAC search and ROI cloud check.
-
-1. Connect to the openEO backend and authenticate.
-2. Search for Landsat scenes through STAC and check `QA_PIXEL` within the ROI.
-3. Load the two selected acquisitions using the same spatial extent.
-4. Export the RGB data as GeoTIFFs and display both images side by side in Jupyter.
-5. Load the spectral and thermal products, apply product scaling and valid-data masks, and check spatial alignment.
-6. Calculate NDVI, NDBI, their differences (2025 minus 2004), and the preliminary candidate-urbanisation mask.
-7. Compare absolute and relative LST and visualise the exploratory results.
-
-The RGB loading and export block is:
-
-```python
-landsat_url = (
-    "https://planetarycomputer.microsoft.com/api/stac/v1/"
-    "collections/landsat-c2-l2"
-)
-
-old_final = connection.load_stac(
-    landsat_url,
-    spatial_extent=bbox_stac,
-    temporal_extent=["2004-05-31", "2004-06-01"],
-    bands=["TM_B3", "TM_B2", "TM_B1"],
-    properties={"platform": lambda x: x == "landsat-5"},
-)
-
-new_final = connection.load_stac(
-    landsat_url,
-    spatial_extent=bbox_stac,
-    temporal_extent=["2025-05-17", "2025-05-18"],
-    bands=["OLI_B4", "OLI_B3", "OLI_B2"],
-    properties={"platform": lambda x: x == "landsat-9"},
-)
-
-old_final.execute_batch("elmina_2004_05_31_rgb.tif", out_format="GTiff")
-new_final.execute_batch("elmina_2025_05_17_rgb.tif", out_format="GTiff")
-```
-
-These filenames specify the RGB exports; the block alone does not reproduce the index or LST analyses. Creating a data cube does not confirm successful backend execution.
-
-For visualisation, the three RGB bands are read with Rasterio and displayed side by side with Matplotlib. The contrast stretch uses the 2nd and 98th percentiles separately for each image. Separate stretches are for display and do not support direct quantitative comparisons of colour or brightness.
-
-### Preliminary change-detection and LST results
-
-| Mean over valid pixels | 2004-05-31 | 2025-05-17 |
-| --- | ---: | ---: |
-| NDVI | 0.59458 | 0.40187 |
-| NDBI | -0.21017 | -0.06159 |
-| LST (°C) | 36.77 | 47.81 |
-
-The preliminary rule flags pixels where **ΔNDVI ≤ -0.20 and ΔNDBI ≥ +0.10**, with Δ defined as 2025 minus 2004. **47.03% of valid pixels** meet both conditions and are labelled **candidate urbanisation**. This is a threshold-based screening result, **not a final urbanised-area estimate**; vegetation loss, bare soil, and other changes may also meet the rule.
-
-The raw LST difference must not be interpreted as a causal effect of urbanisation: weather, acquisition conditions, sensor differences, and other factors can influence the two-date comparison.
-
-Mean relative LST change is **+2.23°C** in candidate-urbanisation pixels and **-2.56°C** in other areas, a group difference of approximately **4.79°C**. These relative results describe a spatial association, not validated change labels or causal attribution. The exact relative-LST baseline and valid-pixel masks must be recorded in the notebook for reproduction. The relative-change map uses a diverging colour scale centred on zero; NoData areas are excluded from interpretation.
-
-## Next steps
-
-- Create a reference change mask in QGIS and validate the candidate-urbanisation mask against it, documenting reference sources and labelling criteria.
-- Assess classification errors and threshold sensitivity before estimating urbanised area or drawing stronger conclusions about LST.
-- Consider a later comparison with pretrained ChangeStar using the same study area and reference mask; no model validation has been completed yet.
-
-## Reproducibility
-
-This README summarises the reported project status. Full reproduction requires the current notebook, backend configuration without credentials, package versions, STAC item IDs, QA bit definitions, product bands and scaling, NoData/valid-pixel masks and denominators, grid/transform checks, threshold implementation, and the exact relative-LST definition. Reference-mask provenance and validation procedures should be added when available. Credentials and tokens must not be published.
+- U.S. Geological Survey. [Landsat Collection 2 Level-2 Science Products](https://www.usgs.gov/landsat-missions/landsat-collection-2-level-2-science-products) and [Surface Temperature](https://www.usgs.gov/landsat-missions/landsat-collection-2-surface-temperature).
+- Microsoft Planetary Computer. [Landsat Collection 2 Level-2 STAC collection](https://planetarycomputer.microsoft.com/api/stac/v1/collections/landsat-c2-l2).
+- Zheng, Z., Ma, A., Zhang, L., and Zhong, Y. (2021). [Change Is Everywhere: Single-Temporal Supervised Object Change Detection in Remote Sensing Imagery](https://openaccess.thecvf.com/content/ICCV2021/papers/Zheng_Change_Is_Everywhere_Single-Temporal_Supervised_Object_Change_Detection_in_Remote_ICCV_2021_paper.pdf). ICCV.
+- [Changen2 documentation and pretrained models in torchange](https://github.com/Z-Zheng/pytorch-change-models/tree/main/torchange/models/changen2).
