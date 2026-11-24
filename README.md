@@ -34,7 +34,7 @@ All three masks show higher mean relative LST change in the changed group. The L
 
 ## Project files and reproduction
 
-The repository tracks this README. The notebook and reference GeoTIFF are separate inputs. Use the following local layout.
+Start with the [clean analysis notebook](Elmina_heat_CLEAN.ipynb) in this repository. Place the separately obtained QGIS reference GeoTIFF beside it using the following layout.
 
 ```text
 Elmina_heat_CLEAN.ipynb
@@ -42,9 +42,9 @@ qgis_reference/
   elmina_reference_change_mask.tif
 ```
 
-1. Obtain the clean notebook and the QGIS reference raster. Start Jupyter from the directory above so the notebook can resolve the relative reference path.
-2. Set up a Python environment with Jupyter, NumPy, Rasterio, Matplotlib, scikit-learn and PyTorch. The acquisition workflow uses openEO and STAC. The ChangeStar experiment also requires `torchange` and pretrained weights. Consult the notebook's imports and model-loading cell for additional dependencies and checkpoint details.
-3. To regenerate imagery inputs, authenticate with an openEO backend that supports `load_stac`. Keep credentials local. Use the acquisitions and bounds above and follow the notebook for scene selection, product scaling, QA and grid checks.
+1. Clone or download this repository and obtain the QGIS reference raster. Start Jupyter from the directory above so the notebook can resolve the relative reference path.
+2. Set up a Python environment with Jupyter, NumPy, pandas, Matplotlib, Rasterio, pystac-client, planetary-computer, scikit-learn and PyTorch. The ChangeStar experiment also requires torchange and access to pretrained weights.
+3. The notebook searches Microsoft Planetary Computer STAC for the specified acquisitions and accesses the Landsat assets directly. Follow the notebook for scene selection, scaling, QA and grid checks.
 4. Restart the kernel and run all cells in order. Use the notebook for the masking rules, spatial split, threshold selection and relative LST calculation.
 
 ## Limitations
